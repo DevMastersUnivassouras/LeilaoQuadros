@@ -24,6 +24,10 @@ export default function LayoutAbas() {
     return <Redirect href="/login" />;
   }
 
+  if (usuario?.role === 'admin') {
+    return <Redirect href="/admin/resumo" />;
+  }
+
   return (
     <Tabs
       screenOptions={{
@@ -37,6 +41,20 @@ export default function LayoutAbas() {
         options={{
           title: 'Inicio',
           tabBarIcon: ({ color }) => <IconeSimbolo size={28} name="house.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="leiloes"
+        options={{
+          title: 'Leiloes',
+          tabBarIcon: ({ color }) => <IconeSimbolo size={28} name="list.bullet.rectangle.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="conquistas"
+        options={{
+          title: 'Conquistas',
+          tabBarIcon: ({ color }) => <IconeSimbolo size={28} name="trophy.fill" color={color} />,
         }}
       />
       <Tabs.Screen

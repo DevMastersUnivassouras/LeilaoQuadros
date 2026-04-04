@@ -10,7 +10,9 @@ export default function TelaCadastro() {
   const { fazerCadastro } = useAutenticacao();
   const [nome, setNome] = useState('');
   const [sobrenome, setSobrenome] = useState('');
+  const [cpf, setCpf] = useState('');
   const [email, setEmail] = useState('');
+  const [telefone, setTelefone] = useState('');
   const [senha, setSenha] = useState('');
   const [ativarBiometriaNoAparelho, setAtivarBiometriaNoAparelho] = useState(false);
   const [carregando, setCarregando] = useState(false);
@@ -22,7 +24,9 @@ export default function TelaCadastro() {
         {
           firstName: nome,
           lastName: sobrenome,
+          cpf,
           email,
+          phone: telefone,
           password: senha,
           biometricEnabled: ativarBiometriaNoAparelho,
         },
@@ -62,11 +66,27 @@ export default function TelaCadastro() {
       />
 
       <EntradaAutenticacao
+        label="CPF"
+        value={cpf}
+        onChangeText={setCpf}
+        placeholder="Somente numeros"
+        keyboardType="number-pad"
+      />
+
+      <EntradaAutenticacao
         label="Email"
         value={email}
         onChangeText={setEmail}
         placeholder="seuemail@dominio.com"
         keyboardType="email-address"
+      />
+
+      <EntradaAutenticacao
+        label="Telefone"
+        value={telefone}
+        onChangeText={setTelefone}
+        placeholder="Seu telefone"
+        keyboardType="phone-pad"
       />
 
       <EntradaAutenticacao

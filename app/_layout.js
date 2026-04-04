@@ -18,8 +18,10 @@ export default function LayoutRaiz() {
       <ThemeProvider value={esquemaCor === 'dark' ? DarkTheme : DefaultTheme}>
         <Stack>
           <Stack.Screen name="login" options={{ headerShown: false }} />
+          <Stack.Screen name="admin-login" options={{ headerShown: false }} />
           <Stack.Screen name="register" options={{ headerShown: false }} />
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="admin" options={{ headerShown: false }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Janela' }} />
         </Stack>
         <StatusBar style="auto" />

@@ -14,6 +14,13 @@ export function logarUsuario(payload) {
   });
 }
 
+export function logarAdmin(payload) {
+  return requisicaoApi('/api/auth/admin/login', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export function buscarMeuUsuario(token) {
   return requisicaoApi('/api/auth/me', {
     method: 'GET',
