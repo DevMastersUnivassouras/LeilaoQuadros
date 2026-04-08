@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAutenticacao } from '@/src/auth/context/contexto-autenticacao';
 import { API_BASE_URL } from '@/src/auth/services/servico-api';
 import { escolherFotoDaGaleria, tirarFotoAgora } from '@/src/auth/services/servico-foto';
+import { buscarCarteira, simularDeposito } from '@/src/auth/services/servico-leilao';
 
 function montarUrlImagem(url) {
   if (!url) {
@@ -18,17 +20,43 @@ function montarUrlImagem(url) {
 }
 
 export default function TelaPerfil() {
-  const { usuario, atualizarDadosPerfil, atualizarFotoPerfil, removerFotoPerfilUsuario } = useAutenticacao();
+  const { usuario, token, atualizarDadosPerfil, atualizarFotoPerfil, removerFotoPerfilUsuario } = useAutenticacao();
   const [nome, setNome] = useState('');
   const [sobrenome, setSobrenome] = useState('');
+  const [email, setEmail] = useState('');
+  const [telefone, setTelefone] = useState('');
   const [salvandoDados, setSalvandoDados] = useState(false);
   const [acaoFoto, setAcaoFoto] = useState('');
   const [previewFoto, setPreviewFoto] = useState(null);
+  const [carteira, setCarteira] = useState({ walletBalance: 0, walletReserved: 0, walletAvailable: 0 });
+  const [depositoValor, setDepositoValor] = useState('100');
+  const [depositando, setDepositando] = useState(false);
 
   useEffect(() => {
     setNome(usuario?.firstName || '');
     setSobrenome(usuario?.lastName || '');
-  }, [usuario?.firstName, usuario?.lastName]);
+    setEmail(usuario?.email || '');
+    setTelefone(usuario?.phone || '');
+  }, [usuario?.firstName, usuario?.lastName, usuario?.email, usuario?.phone]);
+
+  const carregarResumoPerfil = useCallback(async () => {
+    if (!token) {
+      return;
+    }
+
+    try {
+      const walletRes = await buscarCarteira(token);
+      setCarteira(walletRes.wallet || { walletBalance: 0, walletReserved: 0, walletAvailable: 0 });
+    } catch {
+      setCarteira({ walletBalance: 0, walletReserved: 0, walletAvailable: 0 });
+    }
+  }, [token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      carregarResumoPerfil();
+    }, [carregarResumoPerfil]),
+  );
 
   const iniciais = useMemo(() => {
     const a = (usuario?.firstName?.[0] || '').toUpperCase();
@@ -42,9 +70,11 @@ export default function TelaPerfil() {
   async function salvarPerfil() {
     const nomeFinal = nome.trim();
     const sobrenomeFinal = sobrenome.trim();
+    const emailFinal = email.trim().toLowerCase();
+    const telefoneFinal = telefone.trim();
 
-    if (!nomeFinal || !sobrenomeFinal) {
-      Alert.alert('Atenção', 'Nome e sobrenome são obrigatórios.');
+    if (!nomeFinal || !sobrenomeFinal || !emailFinal || !telefoneFinal) {
+      Alert.alert('Atenção', 'Nome, sobrenome, email e telefone são obrigatórios.');
       return;
     }
 
@@ -53,12 +83,38 @@ export default function TelaPerfil() {
       await atualizarDadosPerfil({
         firstName: nomeFinal,
         lastName: sobrenomeFinal,
+        email: emailFinal,
+        phone: telefoneFinal,
       });
       Alert.alert('Sucesso', 'Perfil atualizado no banco de dados.');
     } catch (error) {
       Alert.alert('Erro', error?.message || 'Não foi possível atualizar seu perfil.');
     } finally {
       setSalvandoDados(false);
+    }
+  }
+
+  async function depositarSaldo() {
+    if (!token) {
+      return;
+    }
+
+    const valor = Number(depositoValor);
+    if (!Number.isFinite(valor) || valor <= 0) {
+      Alert.alert('Valor invalido', 'Informe um valor valido para deposito.');
+      return;
+    }
+
+    try {
+      setDepositando(true);
+      await simularDeposito(token, valor);
+      const walletRes = await buscarCarteira(token);
+      setCarteira(walletRes.wallet || { walletBalance: 0, walletReserved: 0, walletAvailable: 0 });
+      Alert.alert('Sucesso', 'Deposito simulado registrado na sua conta.');
+    } catch (error) {
+      Alert.alert('Erro', error?.message || 'Nao foi possivel registrar deposito.');
+    } finally {
+      setDepositando(false);
     }
   }
 
@@ -134,7 +190,7 @@ export default function TelaPerfil() {
   }
 
   return (
-    <View style={styles.tela}>
+    <ScrollView style={styles.tela} contentContainerStyle={styles.telaConteudo}>
       <Text style={styles.titulo}>Perfil</Text>
 
       <View style={styles.cartaoAvatar}>
@@ -146,7 +202,7 @@ export default function TelaPerfil() {
           </View>
         )}
 
-        <Text style={styles.email}>{usuario?.email}</Text>
+        <Text style={styles.email}>CPF: {usuario?.cpf}</Text>
 
         <View style={styles.linhaBotoesFoto}>
           <Pressable onPress={escolherDaGaleria} style={styles.botaoSecundario} disabled={fotoOcupada}>
@@ -170,6 +226,25 @@ export default function TelaPerfil() {
       </View>
 
       <View style={styles.cartaoDados}>
+        <View style={styles.boxSaldo}>
+          <Text style={styles.label}>Saldo simulado</Text>
+          <Text style={styles.textoSaldo}>Balance: R$ {Number(carteira.walletBalance || 0).toFixed(2)}</Text>
+          <Text style={styles.textoSaldoAux}>Reservado: R$ {Number(carteira.walletReserved || 0).toFixed(2)}</Text>
+          <Text style={styles.textoSaldoAux}>Disponivel: R$ {Number(carteira.walletAvailable || 0).toFixed(2)}</Text>
+
+          <TextInput
+            value={depositoValor}
+            onChangeText={setDepositoValor}
+            style={styles.input}
+            placeholder="Valor para deposito"
+            keyboardType="decimal-pad"
+          />
+
+          <Pressable onPress={depositarSaldo} style={styles.botaoDeposito} disabled={depositando}>
+            <Text style={styles.textoBotaoPrincipal}>{depositando ? 'Depositando...' : 'Depositar saldo'}</Text>
+          </Pressable>
+        </View>
+
         <Text style={styles.label}>Nome</Text>
         <TextInput
           value={nome}
@@ -186,6 +261,25 @@ export default function TelaPerfil() {
           style={styles.input}
           placeholder="Seu sobrenome"
           autoCapitalize="words"
+        />
+
+        <Text style={styles.label}>Email</Text>
+        <TextInput
+          value={email}
+          onChangeText={setEmail}
+          style={styles.input}
+          placeholder="Seu email"
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
+
+        <Text style={styles.label}>Telefone</Text>
+        <TextInput
+          value={telefone}
+          onChangeText={setTelefone}
+          style={styles.input}
+          placeholder="Seu telefone"
+          keyboardType="phone-pad"
         />
 
         <Pressable onPress={salvarPerfil} style={styles.botaoPrincipal} disabled={salvandoDados}>
@@ -212,7 +306,7 @@ export default function TelaPerfil() {
           </View>
         </View>
       </Modal>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -220,8 +314,11 @@ const styles = StyleSheet.create({
   tela: {
     flex: 1,
     backgroundColor: '#f8fafc',
+  },
+  telaConteudo: {
     padding: 20,
     gap: 14,
+    paddingBottom: 30,
   },
   titulo: {
     marginTop: 20,
@@ -295,6 +392,29 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 8,
   },
+  boxSaldo: {
+    backgroundColor: '#ecfeff',
+    borderRadius: 12,
+    padding: 8,
+    gap: 6,
+    marginBottom: 8,
+  },
+  textoSaldo: {
+    color: '#0f172a',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  textoSaldoAux: {
+    color: '#0f766e',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  botaoDeposito: {
+    backgroundColor: '#0f766e',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
   label: {
     color: '#0f172a',
     fontSize: 13,
@@ -305,9 +425,9 @@ const styles = StyleSheet.create({
     borderColor: '#cbd5e1',
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     color: '#0f172a',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   botaoPrincipal: {
     marginTop: 8,

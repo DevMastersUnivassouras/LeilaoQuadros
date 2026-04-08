@@ -7,6 +7,7 @@ import {
   cadastrarUsuario,
   excluirConta,
   enviarFotoPerfil,
+  logarAdmin,
   logarUsuario,
   removerFotoPerfil,
 } from '../services/servico-auth';
@@ -95,15 +96,9 @@ export function ProvedorAutenticacao({ children }) {
   useEffect(() => {
     async function iniciarSessao() {
       try {
-        const sessao = await carregarSessao();
-        if (!sessao) {
-          await atualizarBiometriaDisponivel();
-          return;
-        }
-
-        const dadosUsuario = await buscarMeuUsuario(sessao.token);
-        setUsuario(dadosUsuario.user);
-        setToken(sessao.token);
+        await limparSessao();
+        setUsuario(null);
+        setToken(null);
       } catch {
         await limparSessao();
       } finally {
@@ -137,6 +132,15 @@ export function ProvedorAutenticacao({ children }) {
     return {
       mensagemBiometria,
     };
+  }
+
+  async function fazerLoginAdmin(payload) {
+    const respostaLogin = await logarAdmin(payload);
+    await salvarSessao(respostaLogin.user, respostaLogin.token);
+    setUsuario(respostaLogin.user);
+    setToken(respostaLogin.token);
+    await atualizarBiometriaDisponivel();
+    return respostaLogin.user;
   }
 
   async function fazerCadastro(payload, ativarBiometriaNoAparelho) {
@@ -290,9 +294,11 @@ export function ProvedorAutenticacao({ children }) {
   const value = {
     usuario,
     token,
+    ehAdmin: usuario?.role === 'admin',
     carregando,
     podeMostrarBiometria,
     fazerLogin,
+    fazerLoginAdmin,
     fazerCadastro,
     entrarComBiometria,
     sair,

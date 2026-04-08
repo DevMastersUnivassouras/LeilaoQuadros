@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "LeilaoQuadros",
-    "slug": "LeilaoQuadros",
+    "name": "Leilão Mania",
+    "slug": "leilao-mania",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "leilaoquadros",
+    "scheme": "leilao-mania",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "platforms": [
@@ -38,7 +38,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -66,6 +66,46 @@ function montarPathSupabase(config, userId, nomeArquivo) {
   return `${base}/${nomeArquivo}`;
 }
 
+function normalizarPathPrefix(pathPrefix) {
+  return String(pathPrefix || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+|\/+$/g, '')
+    .trim();
+}
+
+function montarPathSupabaseCustomizado(config, userId, nomeArquivo, pathPrefix) {
+  const prefixo = normalizarPathPrefix(pathPrefix);
+
+  if (!prefixo) {
+    return montarPathSupabase(config, userId, nomeArquivo);
+  }
+
+  const pasta = String(config.folder || '').replace(/^\/+|\/+$/g, '');
+  const base = pasta ? `${pasta}/${prefixo}` : prefixo;
+  return `${base}/${nomeArquivo}`;
+}
+
+function montarPathBlob(userId, nomeArquivo, pathPrefix) {
+  const prefixo = normalizarPathPrefix(pathPrefix);
+  return prefixo ? `${prefixo}/${nomeArquivo}` : `users/${userId}/${nomeArquivo}`;
+}
+
+function caminhoRelativoLocalCustomizado(userId, fileName, pathPrefix) {
+  const prefixo = normalizarPathPrefix(pathPrefix);
+  if (prefixo) {
+    return `/uploads/${prefixo}/${fileName}`;
+  }
+  return caminhoRelativoLocal(userId, fileName);
+}
+
+function pastaLocalCustomizada(userId, pathPrefix) {
+  const prefixo = normalizarPathPrefix(pathPrefix);
+  if (prefixo) {
+    return path.join(pastaUploads, ...prefixo.split('/'));
+  }
+  return pastaUsuarioLocal(userId);
+}
+
 function criarClienteSupabaseStorage(config) {
   return createClient(config.url, config.serviceRoleKey, {
     auth: {
@@ -124,7 +164,8 @@ function montarNomeArquivo(originalName) {
   return `${Date.now()}-${Math.round(Math.random() * 1e9)}${safeExt}`;
 }
 
-async function salvarImagemNoStorage(file, userId) {
+async function salvarImagemNoStorage(file, userId, options = {}) {
+  const pathPrefix = normalizarPathPrefix(options.pathPrefix);
   const configSupabase = obterConfigSupabaseStorage();
   const configBlob = obterConfigBlob();
 
@@ -133,7 +174,7 @@ async function salvarImagemNoStorage(file, userId) {
     await garantirBucketSupabase(configSupabase, clienteSupabase);
 
     const nome = montarNomeArquivo(file.originalname);
-    const blobPath = montarPathSupabase(configSupabase, userId, nome);
+    const blobPath = montarPathSupabaseCustomizado(configSupabase, userId, nome, pathPrefix);
     const bytes = fs.readFileSync(file.path);
 
     const { error: erroUpload } = await clienteSupabase.storage
@@ -159,12 +200,12 @@ async function salvarImagemNoStorage(file, userId) {
   }
 
   if (!configBlob) {
-    garantirPastaUsuario(userId);
+    fs.mkdirSync(pastaLocalCustomizada(userId, pathPrefix), { recursive: true });
     const nome = montarNomeArquivo(file.originalname);
-    const destino = path.join(pastaUsuarioLocal(userId), nome);
+    const destino = path.join(pastaLocalCustomizada(userId, pathPrefix), nome);
     fs.copyFileSync(file.path, destino);
     return {
-      profileImageUrl: caminhoRelativoLocal(userId, nome),
+      profileImageUrl: caminhoRelativoLocalCustomizado(userId, nome, pathPrefix),
       tipoStorage: 'local',
       referencia: nome,
     };
@@ -175,7 +216,7 @@ async function salvarImagemNoStorage(file, userId) {
   await container.createIfNotExists();
 
   const nome = montarNomeArquivo(file.originalname);
-  const blobPath = `users/${userId}/${nome}`;
+  const blobPath = montarPathBlob(userId, nome, pathPrefix);
   const blobClient = container.getBlockBlobClient(blobPath);
 
   await blobClient.uploadFile(file.path, {

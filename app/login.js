@@ -1,14 +1,15 @@
 import { Link, router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View, Keyboard } from 'react-native';
 
+import { IconeSimbolo } from '@/components/ui/icone-simbolo';
 import { BotaoAutenticacao } from '@/src/auth/components/botao-autenticacao';
 import { EntradaAutenticacao } from '@/src/auth/components/entrada-autenticacao';
 import { useAutenticacao } from '@/src/auth/context/contexto-autenticacao';
 
 export default function TelaLogin() {
   const { fazerLogin, entrarComBiometria, podeMostrarBiometria, usuario } = useAutenticacao();
-  const [email, setEmail] = useState('');
+  const [cpf, setCpf] = useState('');
   const [senha, setSenha] = useState('');
   const [carregando, setCarregando] = useState(false);
 
@@ -21,7 +22,7 @@ export default function TelaLogin() {
   async function clicarEntrar() {
     try {
       setCarregando(true);
-      const resultadoLogin = await fazerLogin({ email, password: senha }, false);
+      const resultadoLogin = await fazerLogin({ cpf, password: senha }, false);
 
       if (resultadoLogin?.mensagemBiometria) {
         Alert.alert('Biometria', resultadoLogin.mensagemBiometria);
@@ -49,14 +50,18 @@ export default function TelaLogin() {
 
   return (
     <View style={styles.caixaPrincipal}>
+      <Pressable style={styles.botaoAdmin} onPress={() => router.push('/admin-login')}>
+        <IconeSimbolo name="shield.fill" size={22} color="#0f172a" />
+      </Pressable>
+
       <Text style={styles.titulo}>Entrar no Leilão</Text>
 
       <EntradaAutenticacao
-        label="Email"
-        value={email}
-        onChangeText={setEmail}
-        placeholder="seuemail@dominio.com"
-        keyboardType="email-address"
+        label="CPF"
+        value={cpf}
+        onChangeText={setCpf}
+        placeholder="Somente numeros"
+        keyboardType="number-pad"
       />
 
       <EntradaAutenticacao
@@ -67,18 +72,24 @@ export default function TelaLogin() {
         secureTextEntry
       />
 
-      <BotaoAutenticacao title="Entrar" onPress={clicarEntrar} loading={carregando} />
+      <BotaoAutenticacao title="Entrar" onPress={() => {
+        clicarEntrar();
+        Keyboard.dismiss();
+      }} loading={carregando} />
 
       {podeMostrarBiometria ? (
         <BotaoAutenticacao
           title="Entrar com biometria"
-          onPress={clicarBiometria}
+          onPress={() => {
+            clicarBiometria();
+            Keyboard.dismiss();
+          }}
           loading={carregando}
           variant="secondary"
         />
       ) : null}
 
-      <Link href="/register" style={styles.linkCadastro}>
+      <Link href="/register" style={styles.linkCadastro} onPress={() => Keyboard.dismiss()}>
         Não tem conta? Cadastre-se
       </Link>
     </View>
@@ -97,6 +108,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 24,
     color: '#0f172a',
+  },
+  botaoAdmin: {
+    position: 'absolute',
+    top: 56,
+    right: 20,
+    zIndex: 10,
+    padding: 8,
+    borderRadius: 999,
+    backgroundColor: '#e2e8f0',
   },
   linkCadastro: {
     marginTop: 16,

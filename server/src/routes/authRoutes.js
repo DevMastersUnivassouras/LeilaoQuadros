@@ -7,7 +7,7 @@ const multer = require('multer');
 
 const { pool } = require('../db/pool');
 const { authMiddleware } = require('../middleware/authMiddleware');
-const { loginSchema, registerSchema, updateProfileSchema } = require('../schemas/authSchema');
+const { adminLoginSchema, loginSchema, registerSchema, updateProfileSchema } = require('../schemas/authSchema');
 const {
   pastaUploads,
   limparFotosOrfasLocais,
@@ -47,16 +47,42 @@ const uploadFotoPerfil = multer({
   },
 });
 
-function buildToken(userId) {
-  return jwt.sign({ sub: userId }, process.env.JWT_SECRET, {
+function buildToken(userId, role) {
+  return jwt.sign({ sub: userId, role }, process.env.JWT_SECRET, {
     expiresIn: '7d',
   });
+}
+
+async function garantirAdminSistema() {
+  const senhaPadraoAdmin = String(process.env.ADMIN_PASSWORD || 'adminadmin');
+  const hash = await bcrypt.hash(senhaPadraoAdmin, 10);
+
+  const created = await pool.query(
+    `INSERT INTO leilao_users (cpf, user_role, email, phone, first_name, last_name, password_hash, biometric_enabled)
+     VALUES ('00000000000', 'admin', 'admin@leilao.local', '00000000000', 'Admin', 'Sistema', $1, FALSE)
+     ON CONFLICT (email)
+     DO UPDATE SET user_role = 'admin', password_hash = EXCLUDED.password_hash, updated_at = NOW()
+     RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
+    [hash],
+  );
+
+  return created.rows[0];
+}
+
+function obterCpfsAdminConfigurados() {
+  return String(process.env.ADMIN_CPFS || process.env.ADMIN_CPF || '')
+    .split(',')
+    .map((cpf) => cpf.replace(/\D/g, '').trim())
+    .filter(Boolean);
 }
 
 function mapUser(row) {
   return {
     id: row.id,
+    cpf: row.cpf,
+    role: row.user_role,
     email: row.email,
+    phone: row.phone,
     firstName: row.first_name,
     lastName: row.last_name,
     profileImageUrl: row.profile_image_url,
@@ -74,26 +100,28 @@ authRoutes.post('/register', async (req, res) => {
     });
   }
 
-  const { email, firstName, lastName, password, biometricEnabled } = parsed.data;
+  const { cpf, email, phone, firstName, lastName, password, biometricEnabled } = parsed.data;
 
   try {
-    const existingUser = await pool.query('SELECT id FROM leilao_users WHERE email = $1', [email]);
+    const existingUser = await pool.query('SELECT id FROM leilao_users WHERE cpf = $1 OR email = $2', [cpf, email]);
 
     if (existingUser.rowCount > 0) {
-      return res.status(409).json({ message: 'Email já cadastrado.' });
+      return res.status(409).json({ message: 'CPF ou email já cadastrado.' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    const cpfsAdmin = obterCpfsAdminConfigurados();
+    const role = cpfsAdmin.includes(cpf) ? 'admin' : 'user';
 
     const created = await pool.query(
-      `INSERT INTO leilao_users (email, first_name, last_name, password_hash, biometric_enabled)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, email, first_name, last_name, profile_image_url, biometric_enabled`,
-      [email, firstName, lastName, passwordHash, biometricEnabled],
+      `INSERT INTO leilao_users (cpf, user_role, email, phone, first_name, last_name, password_hash, biometric_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
+      [cpf, role, email, phone, firstName, lastName, passwordHash, biometricEnabled],
     );
 
     const user = mapUser(created.rows[0]);
-    const token = buildToken(user.id);
+    const token = buildToken(user.id, user.role);
 
     return res.status(201).json({ user, token });
   } catch (error) {
@@ -112,14 +140,14 @@ authRoutes.post('/login', async (req, res) => {
     });
   }
 
-  const { email, password } = parsed.data;
+  const { cpf, password } = parsed.data;
 
   try {
     const found = await pool.query(
-      `SELECT id, email, first_name, last_name, profile_image_url, password_hash, biometric_enabled
+      `SELECT id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, password_hash, biometric_enabled
        FROM leilao_users
-       WHERE email = $1`,
-      [email],
+       WHERE cpf = $1`,
+      [cpf],
     );
 
     if (found.rowCount === 0) {
@@ -134,11 +162,71 @@ authRoutes.post('/login', async (req, res) => {
     }
 
     const user = mapUser(userRow);
-    const token = buildToken(user.id);
+    const token = buildToken(user.id, user.role);
 
     return res.json({ user, token });
   } catch {
     return res.status(500).json({ message: 'Erro ao autenticar usuário.' });
+  }
+});
+
+authRoutes.post('/admin/login', async (req, res) => {
+  const parsed = adminLoginSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    return res.status(400).json({
+      message: 'Dados inválidos.',
+      errors: parsed.error.flatten().fieldErrors,
+    });
+  }
+
+  const { adminId, password } = parsed.data;
+  const idEsperado = String(process.env.ADMIN_LOGIN_ID || 'admin').trim().toLowerCase();
+  const senhaEsperada = String(process.env.ADMIN_PASSWORD || 'adminadmin');
+
+  try {
+    if (String(adminId).trim().toLowerCase() !== idEsperado || password !== senhaEsperada) {
+      return res.status(401).json({ message: 'Credenciais admin inválidas.' });
+    }
+
+    const userRow = await garantirAdminSistema();
+    const user = mapUser(userRow);
+    const token = buildToken(user.id, user.role);
+
+    return res.json({ user, token });
+  } catch {
+    return res.status(500).json({ message: 'Erro ao autenticar administrador.' });
+  }
+});
+
+authRoutes.post('/admin/bootstrap', async (req, res) => {
+  const secret = String(req.body?.secret || '');
+  const cpf = String(req.body?.cpf || '').replace(/\D/g, '');
+
+  if (!secret || secret !== String(process.env.ADMIN_BOOTSTRAP_SECRET || '')) {
+    return res.status(403).json({ message: 'Secret inválido para bootstrap admin.' });
+  }
+
+  if (cpf.length !== 11) {
+    return res.status(400).json({ message: 'CPF inválido para bootstrap admin.' });
+  }
+
+  try {
+    const updated = await pool.query(
+      `UPDATE leilao_users
+       SET user_role = 'admin', updated_at = NOW()
+       WHERE cpf = $1
+       RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
+      [cpf],
+    );
+
+    if (updated.rowCount === 0) {
+      return res.status(404).json({ message: 'Usuário não encontrado para promover a admin.' });
+    }
+
+    return res.json({ user: mapUser(updated.rows[0]) });
+  } catch {
+    return res.status(500).json({ message: 'Erro ao promover usuário admin.' });
   }
 });
 
@@ -150,7 +238,7 @@ authRoutes.patch('/biometric', authMiddleware, async (req, res) => {
       `UPDATE leilao_users
        SET biometric_enabled = $1, updated_at = NOW()
        WHERE id = $2
-       RETURNING id, email, first_name, last_name, profile_image_url, biometric_enabled`,
+      RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
       [enabled, req.user.sub],
     );
 
@@ -167,7 +255,7 @@ authRoutes.patch('/biometric', authMiddleware, async (req, res) => {
 authRoutes.get('/me', authMiddleware, async (req, res) => {
   try {
     const found = await pool.query(
-      `SELECT id, email, first_name, last_name, profile_image_url, biometric_enabled
+      `SELECT id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled
        FROM leilao_users
        WHERE id = $1`,
       [req.user.sub],
@@ -205,15 +293,15 @@ authRoutes.patch('/profile', authMiddleware, async (req, res) => {
     });
   }
 
-  const { firstName, lastName } = parsed.data;
+  const { firstName, lastName, email, phone } = parsed.data;
 
   try {
     const updated = await pool.query(
       `UPDATE leilao_users
-       SET first_name = $1, last_name = $2, updated_at = NOW()
-       WHERE id = $3
-       RETURNING id, email, first_name, last_name, profile_image_url, biometric_enabled`,
-      [firstName, lastName, req.user.sub],
+       SET first_name = $1, last_name = $2, email = $3, phone = $4, updated_at = NOW()
+       WHERE id = $5
+      RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
+      [firstName, lastName, email, phone, req.user.sub],
     );
 
     if (updated.rowCount === 0) {
@@ -256,7 +344,7 @@ authRoutes.post('/profile/photo', authMiddleware, (req, res) => {
         `UPDATE leilao_users
          SET profile_image_url = $1, updated_at = NOW()
          WHERE id = $2
-         RETURNING id, email, first_name, last_name, profile_image_url, biometric_enabled`,
+         RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
         [imagemNova.profileImageUrl, userId],
       );
 
@@ -286,7 +374,7 @@ authRoutes.delete('/profile/photo', authMiddleware, async (req, res) => {
 
   try {
     const atual = await pool.query(
-      `SELECT id, email, first_name, last_name, profile_image_url, biometric_enabled
+      `SELECT id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled
        FROM leilao_users
        WHERE id = $1`,
       [userId],
@@ -306,7 +394,7 @@ authRoutes.delete('/profile/photo', authMiddleware, async (req, res) => {
       `UPDATE leilao_users
        SET profile_image_url = NULL, updated_at = NOW()
        WHERE id = $1
-       RETURNING id, email, first_name, last_name, profile_image_url, biometric_enabled`,
+      RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
       [userId],
     );
 
