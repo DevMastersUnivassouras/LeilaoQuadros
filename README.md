@@ -68,6 +68,22 @@ Tambem tem painel admin para gerenciar leiloes, acompanhar participantes, venced
 - server/src/services/
 	Regras de negocio de apoio (agendador de leiloes, storage etc.).
 
+## Testes
+
+Foram criados testes unitarios no backend para validar funcoes principais.
+
+- Local dos testes
+	server/tests/
+
+- Arquivos de teste
+	authSchema.test.js
+	authMiddleware.test.js
+	servicoArmazenamento.test.js
+
+- Como rodar
+	Entrar na pasta server e executar:
+	node --test tests/*.test.js
+
 ## Integrantes
 
 - Bruno Lourenco Neves - 202312035
