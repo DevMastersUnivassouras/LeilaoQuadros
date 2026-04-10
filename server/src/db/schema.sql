@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS leilao_users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cpf TEXT UNIQUE NOT NULL,
+  birth_date DATE,
   email TEXT UNIQUE NOT NULL,
   phone TEXT NOT NULL,
   user_role TEXT NOT NULL DEFAULT 'user',
@@ -20,6 +21,9 @@ ADD COLUMN IF NOT EXISTS profile_image_url TEXT;
 
 ALTER TABLE leilao_users
 ADD COLUMN IF NOT EXISTS cpf TEXT;
+
+ALTER TABLE leilao_users
+ADD COLUMN IF NOT EXISTS birth_date DATE;
 
 ALTER TABLE leilao_users
 ADD COLUMN IF NOT EXISTS phone TEXT;

@@ -1,6 +1,7 @@
 import { Link, router } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Switch, Text, View, Keyboard } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Alert, StyleSheet, Switch, Text, View, Keyboard, Pressable, Platform } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 
 import { BotaoAutenticacao } from '@/src/auth/components/botao-autenticacao';
@@ -13,10 +14,53 @@ function validarEmail(valor) {
   return regexEmail.test(emailLimpo);
 }
 
-function validarCadastro({ nome, sobrenome, cpf, email, telefone, senha, senhaConfirmacao }) {
+function normalizarDataNascimentoParaApi(valor) {
+  const dataLimpa = String(valor || '').trim();
+  const regexBrasil = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+  const regexIso = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+  const matchBrasil = dataLimpa.match(regexBrasil);
+  if (matchBrasil) {
+    const [, dia, mes, ano] = matchBrasil;
+    return `${ano}-${mes}-${dia}`;
+  }
+
+  if (regexIso.test(dataLimpa)) {
+    return dataLimpa;
+  }
+
+  return '';
+}
+
+function formatarDataParaTela(data) {
+  const dia = String(data.getDate()).padStart(2, '0');
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const ano = String(data.getFullYear());
+  return `${dia}/${mes}/${ano}`;
+}
+
+function validarDataNascimento(valor) {
+  const iso = normalizarDataNascimentoParaApi(valor);
+
+  if (!iso) {
+    return false;
+  }
+
+  const [ano, mes, dia] = iso.split('-').map(Number);
+  const data = new Date(Date.UTC(ano, mes - 1, dia));
+
+  return (
+    data.getUTCFullYear() === ano
+    && data.getUTCMonth() === mes - 1
+    && data.getUTCDate() === dia
+  );
+}
+
+function validarCadastro({ nome, sobrenome, cpf, dataNascimento, email, telefone, senha, senhaConfirmacao }) {
   if (!nome.trim() || nome.trim().length < 2) return "Informe um nome válido.";
   if (!sobrenome.trim() || sobrenome.trim().length < 2) return "Informe um sobrenome válido.";
   if (String(cpf || "").replace(/\D/g, "").length !== 11) return "CPF deve ter 11 dígitos.";
+  if (!validarDataNascimento(dataNascimento)) return "Data de nascimento inválida. Use o calendário para selecionar.";
   if (!validarEmail(email)) return "Informe um email válido.";
   if (!telefone.trim() || telefone.trim().length < 8) return "Informe um telefone válido.";
   if (!senha || senha.length < 6) return "Senha deve ter pelo menos 6 caracteres.";
@@ -29,6 +73,9 @@ export default function TelaCadastro() {
   const [nome, setNome] = useState('');
   const [sobrenome, setSobrenome] = useState('');
   const [cpf, setCpf] = useState('');
+  const [dataNascimento, setDataNascimento] = useState('');
+  const [dataNascimentoDate, setDataNascimentoDate] = useState(new Date(2000, 0, 1));
+  const [mostrarSeletorData, setMostrarSeletorData] = useState(false);
   const [email, setEmail] = useState('');
   const [telefone, setTelefone] = useState('');
   const [senha, setSenha] = useState('');
@@ -36,11 +83,34 @@ export default function TelaCadastro() {
   const [ativarBiometriaNoAparelho, setAtivarBiometriaNoAparelho] = useState(false);
   const [carregando, setCarregando] = useState(false);
 
+  function abrirSeletorData() {
+    Keyboard.dismiss();
+    setMostrarSeletorData(true);
+  }
+
+  function aoSelecionarData(event, dataSelecionada) {
+    if (Platform.OS === 'android') {
+      setMostrarSeletorData(false);
+    }
+
+    if (event?.type === 'dismissed' || !dataSelecionada) {
+      return;
+    }
+
+    setDataNascimentoDate(dataSelecionada);
+    setDataNascimento(formatarDataParaTela(dataSelecionada));
+
+    if (Platform.OS !== 'android') {
+      setMostrarSeletorData(false);
+    }
+  }
+
   async function clicarCadastrar() {
     const erroValidacao = validarCadastro({
       nome,
       sobrenome,
       cpf,
+      dataNascimento,
       email,
       telefone,
       senha,
@@ -56,6 +126,7 @@ export default function TelaCadastro() {
       firstName: nome.trim(),
       lastName: sobrenome.trim(),
       cpf: cpf,
+      birthDate: normalizarDataNascimentoParaApi(dataNascimento),
       email: email.trim().toLowerCase(),
       phone: telefone.trim(),
       password: senha,
@@ -108,6 +179,25 @@ export default function TelaCadastro() {
           placeholder="Somente numeros"
           keyboardType="number-pad"
         />
+
+        <View style={styles.caixaCampoData}>
+          <Text style={styles.rotuloData}>Data de nascimento</Text>
+          <Pressable onPress={abrirSeletorData} style={styles.entradaData}>
+            <Text style={dataNascimento ? styles.textoData : styles.textoPlaceholderData}>
+              {dataNascimento || 'Selecionar no calendário'}
+            </Text>
+          </Pressable>
+        </View>
+
+        {mostrarSeletorData && (
+          <DateTimePicker
+            value={dataNascimentoDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            maximumDate={new Date()}
+            onChange={aoSelecionarData}
+          />
+        )}
 
         <EntradaAutenticacao
           label="Email"
@@ -184,6 +274,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#334155',
     fontWeight: '600',
+  },
+  caixaCampoData: {
+    width: '100%',
+    marginBottom: 14,
+  },
+  rotuloData: {
+    marginBottom: 6,
+    fontSize: 14,
+    color: '#1f2937',
+    fontWeight: '600',
+  },
+  entradaData: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+  },
+  textoData: {
+    color: '#111827',
+  },
+  textoPlaceholderData: {
+    color: '#9ca3af',
   },
   linkLogin: {
     marginTop: 16,

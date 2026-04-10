@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Platform } from 'react-native';
 
 import { useAutenticacao } from '@/src/auth/context/contexto-autenticacao';
 import { API_BASE_URL } from '@/src/auth/services/servico-api';
@@ -19,12 +20,80 @@ function montarUrlImagem(url) {
   return `${API_BASE_URL}${url}`;
 }
 
+function formatarDataNascimentoParaTela(valor) {
+  const dataLimpa = String(valor || '').trim();
+  const regexIso = /^(\d{4})-(\d{2})-(\d{2})$/;
+  const matchIso = dataLimpa.match(regexIso);
+
+  if (!matchIso) {
+    return dataLimpa;
+  }
+
+  const [, ano, mes, dia] = matchIso;
+  return `${dia}/${mes}/${ano}`;
+}
+
+function normalizarDataNascimentoParaApi(valor) {
+  const dataLimpa = String(valor || '').trim();
+  const regexBrasil = /^(\d{2})\/(\d{2})\/(\d{4})$/;
+  const regexIso = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+  const matchBrasil = dataLimpa.match(regexBrasil);
+  if (matchBrasil) {
+    const [, dia, mes, ano] = matchBrasil;
+    return `${ano}-${mes}-${dia}`;
+  }
+
+  if (regexIso.test(dataLimpa)) {
+    return dataLimpa;
+  }
+
+  return '';
+}
+
+function formatarDataParaTela(data) {
+  const dia = String(data.getDate()).padStart(2, '0');
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const ano = String(data.getFullYear());
+  return `${dia}/${mes}/${ano}`;
+}
+
+function converterIsoParaDate(valor) {
+  const iso = normalizarDataNascimentoParaApi(valor);
+  if (!iso) {
+    return new Date(2000, 0, 1);
+  }
+
+  const [ano, mes, dia] = iso.split('-').map(Number);
+  return new Date(ano, mes - 1, dia);
+}
+
+function validarDataNascimento(valor) {
+  const iso = normalizarDataNascimentoParaApi(valor);
+
+  if (!iso) {
+    return false;
+  }
+
+  const [ano, mes, dia] = iso.split('-').map(Number);
+  const data = new Date(Date.UTC(ano, mes - 1, dia));
+
+  return (
+    data.getUTCFullYear() === ano
+    && data.getUTCMonth() === mes - 1
+    && data.getUTCDate() === dia
+  );
+}
+
 export default function TelaPerfil() {
   const { usuario, token, atualizarDadosPerfil, atualizarFotoPerfil, removerFotoPerfilUsuario } = useAutenticacao();
   const [nome, setNome] = useState('');
   const [sobrenome, setSobrenome] = useState('');
   const [email, setEmail] = useState('');
   const [telefone, setTelefone] = useState('');
+  const [dataNascimento, setDataNascimento] = useState('');
+  const [dataNascimentoDate, setDataNascimentoDate] = useState(new Date(2000, 0, 1));
+  const [mostrarSeletorData, setMostrarSeletorData] = useState(false);
   const [salvandoDados, setSalvandoDados] = useState(false);
   const [acaoFoto, setAcaoFoto] = useState('');
   const [previewFoto, setPreviewFoto] = useState(null);
@@ -37,7 +106,30 @@ export default function TelaPerfil() {
     setSobrenome(usuario?.lastName || '');
     setEmail(usuario?.email || '');
     setTelefone(usuario?.phone || '');
-  }, [usuario?.firstName, usuario?.lastName, usuario?.email, usuario?.phone]);
+    setDataNascimento(formatarDataNascimentoParaTela(usuario?.birthDate || ''));
+    setDataNascimentoDate(converterIsoParaDate(usuario?.birthDate || ''));
+  }, [usuario?.firstName, usuario?.lastName, usuario?.email, usuario?.phone, usuario?.birthDate]);
+
+  function abrirSeletorData() {
+    setMostrarSeletorData(true);
+  }
+
+  function aoSelecionarData(event, dataSelecionada) {
+    if (Platform.OS === 'android') {
+      setMostrarSeletorData(false);
+    }
+
+    if (event?.type === 'dismissed' || !dataSelecionada) {
+      return;
+    }
+
+    setDataNascimentoDate(dataSelecionada);
+    setDataNascimento(formatarDataParaTela(dataSelecionada));
+
+    if (Platform.OS !== 'android') {
+      setMostrarSeletorData(false);
+    }
+  }
 
   const carregarResumoPerfil = useCallback(async () => {
     if (!token) {
@@ -72,9 +164,16 @@ export default function TelaPerfil() {
     const sobrenomeFinal = sobrenome.trim();
     const emailFinal = email.trim().toLowerCase();
     const telefoneFinal = telefone.trim();
+    const dataNascimentoFinal = dataNascimento.trim();
+    const dataNascimentoFinalIso = normalizarDataNascimentoParaApi(dataNascimentoFinal);
 
-    if (!nomeFinal || !sobrenomeFinal || !emailFinal || !telefoneFinal) {
-      Alert.alert('Atenção', 'Nome, sobrenome, email e telefone são obrigatórios.');
+    if (!nomeFinal || !sobrenomeFinal || !emailFinal || !telefoneFinal || !dataNascimentoFinal) {
+      Alert.alert('Atenção', 'Nome, sobrenome, data de nascimento, email e telefone são obrigatórios.');
+      return;
+    }
+
+    if (!validarDataNascimento(dataNascimentoFinal)) {
+      Alert.alert('Atenção', 'Data de nascimento inválida. Use o calendário para selecionar.');
       return;
     }
 
@@ -85,6 +184,7 @@ export default function TelaPerfil() {
         lastName: sobrenomeFinal,
         email: emailFinal,
         phone: telefoneFinal,
+        birthDate: dataNascimentoFinalIso,
       });
       Alert.alert('Sucesso', 'Perfil atualizado no banco de dados.');
     } catch (error) {
@@ -273,6 +373,23 @@ export default function TelaPerfil() {
           keyboardType="email-address"
         />
 
+        <Text style={styles.label}>Data de nascimento</Text>
+        <Pressable onPress={abrirSeletorData} style={styles.input}>
+          <Text style={dataNascimento ? styles.textoInputData : styles.textoPlaceholderData}>
+            {dataNascimento || 'Selecionar no calendário'}
+          </Text>
+        </Pressable>
+
+        {mostrarSeletorData && (
+          <DateTimePicker
+            value={dataNascimentoDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            maximumDate={new Date()}
+            onChange={aoSelecionarData}
+          />
+        )}
+
         <Text style={styles.label}>Telefone</Text>
         <TextInput
           value={telefone}
@@ -428,6 +545,12 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     color: '#0f172a',
     marginBottom: 4,
+  },
+  textoInputData: {
+    color: '#0f172a',
+  },
+  textoPlaceholderData: {
+    color: '#94a3b8',
   },
   botaoPrincipal: {
     marginTop: 8,

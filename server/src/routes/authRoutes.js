@@ -58,11 +58,11 @@ async function garantirAdminSistema() {
   const hash = await bcrypt.hash(senhaPadraoAdmin, 10);
 
   const created = await pool.query(
-    `INSERT INTO leilao_users (cpf, user_role, email, phone, first_name, last_name, password_hash, biometric_enabled)
-     VALUES ('00000000000', 'admin', 'admin@leilao.local', '00000000000', 'Admin', 'Sistema', $1, FALSE)
+    `INSERT INTO leilao_users (cpf, user_role, email, phone, first_name, last_name, password_hash, biometric_enabled, birth_date)
+     VALUES ('00000000000', 'admin', 'admin@leilao.local', '00000000000', 'Admin', 'Sistema', $1, FALSE, NULL)
      ON CONFLICT (email)
      DO UPDATE SET user_role = 'admin', password_hash = EXCLUDED.password_hash, updated_at = NOW()
-     RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
+     RETURNING id, cpf, user_role, email, phone, first_name, last_name, birth_date, profile_image_url, biometric_enabled`,
     [hash],
   );
 
@@ -85,6 +85,7 @@ function mapUser(row) {
     phone: row.phone,
     firstName: row.first_name,
     lastName: row.last_name,
+    birthDate: row.birth_date,
     profileImageUrl: row.profile_image_url,
     biometricEnabled: row.biometric_enabled,
   };
@@ -100,7 +101,7 @@ authRoutes.post('/register', async (req, res) => {
     });
   }
 
-  const { cpf, email, phone, firstName, lastName, password, biometricEnabled } = parsed.data;
+  const { cpf, email, phone, firstName, lastName, birthDate, password, biometricEnabled } = parsed.data;
 
   try {
     const existingUser = await pool.query('SELECT id FROM leilao_users WHERE cpf = $1 OR email = $2', [cpf, email]);
@@ -114,10 +115,10 @@ authRoutes.post('/register', async (req, res) => {
     const role = cpfsAdmin.includes(cpf) ? 'admin' : 'user';
 
     const created = await pool.query(
-      `INSERT INTO leilao_users (cpf, user_role, email, phone, first_name, last_name, password_hash, biometric_enabled)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
-      [cpf, role, email, phone, firstName, lastName, passwordHash, biometricEnabled],
+      `INSERT INTO leilao_users (cpf, user_role, email, phone, first_name, last_name, birth_date, password_hash, biometric_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, cpf, user_role, email, phone, first_name, last_name, birth_date, profile_image_url, biometric_enabled`,
+      [cpf, role, email, phone, firstName, lastName, birthDate, passwordHash, biometricEnabled],
     );
 
     const user = mapUser(created.rows[0]);
@@ -144,7 +145,7 @@ authRoutes.post('/login', async (req, res) => {
 
   try {
     const found = await pool.query(
-      `SELECT id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, password_hash, biometric_enabled
+      `SELECT id, cpf, user_role, email, phone, first_name, last_name, birth_date, profile_image_url, password_hash, biometric_enabled
        FROM leilao_users
        WHERE cpf = $1`,
       [cpf],
@@ -216,7 +217,7 @@ authRoutes.post('/admin/bootstrap', async (req, res) => {
       `UPDATE leilao_users
        SET user_role = 'admin', updated_at = NOW()
        WHERE cpf = $1
-       RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
+       RETURNING id, cpf, user_role, email, phone, first_name, last_name, birth_date, profile_image_url, biometric_enabled`,
       [cpf],
     );
 
@@ -238,7 +239,7 @@ authRoutes.patch('/biometric', authMiddleware, async (req, res) => {
       `UPDATE leilao_users
        SET biometric_enabled = $1, updated_at = NOW()
        WHERE id = $2
-      RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
+      RETURNING id, cpf, user_role, email, phone, first_name, last_name, birth_date, profile_image_url, biometric_enabled`,
       [enabled, req.user.sub],
     );
 
@@ -255,7 +256,7 @@ authRoutes.patch('/biometric', authMiddleware, async (req, res) => {
 authRoutes.get('/me', authMiddleware, async (req, res) => {
   try {
     const found = await pool.query(
-      `SELECT id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled
+      `SELECT id, cpf, user_role, email, phone, first_name, last_name, birth_date, profile_image_url, biometric_enabled
        FROM leilao_users
        WHERE id = $1`,
       [req.user.sub],
@@ -293,15 +294,15 @@ authRoutes.patch('/profile', authMiddleware, async (req, res) => {
     });
   }
 
-  const { firstName, lastName, email, phone } = parsed.data;
+  const { firstName, lastName, email, phone, birthDate } = parsed.data;
 
   try {
     const updated = await pool.query(
       `UPDATE leilao_users
-       SET first_name = $1, last_name = $2, email = $3, phone = $4, updated_at = NOW()
-       WHERE id = $5
-      RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
-      [firstName, lastName, email, phone, req.user.sub],
+       SET first_name = $1, last_name = $2, email = $3, phone = $4, birth_date = $5, updated_at = NOW()
+       WHERE id = $6
+      RETURNING id, cpf, user_role, email, phone, first_name, last_name, birth_date, profile_image_url, biometric_enabled`,
+      [firstName, lastName, email, phone, birthDate, req.user.sub],
     );
 
     if (updated.rowCount === 0) {
@@ -344,7 +345,7 @@ authRoutes.post('/profile/photo', authMiddleware, (req, res) => {
         `UPDATE leilao_users
          SET profile_image_url = $1, updated_at = NOW()
          WHERE id = $2
-         RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
+         RETURNING id, cpf, user_role, email, phone, first_name, last_name, birth_date, profile_image_url, biometric_enabled`,
         [imagemNova.profileImageUrl, userId],
       );
 
@@ -374,7 +375,7 @@ authRoutes.delete('/profile/photo', authMiddleware, async (req, res) => {
 
   try {
     const atual = await pool.query(
-      `SELECT id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled
+      `SELECT id, cpf, user_role, email, phone, first_name, last_name, birth_date, profile_image_url, biometric_enabled
        FROM leilao_users
        WHERE id = $1`,
       [userId],
@@ -394,7 +395,7 @@ authRoutes.delete('/profile/photo', authMiddleware, async (req, res) => {
       `UPDATE leilao_users
        SET profile_image_url = NULL, updated_at = NOW()
        WHERE id = $1
-      RETURNING id, cpf, user_role, email, phone, first_name, last_name, profile_image_url, biometric_enabled`,
+      RETURNING id, cpf, user_role, email, phone, first_name, last_name, birth_date, profile_image_url, biometric_enabled`,
       [userId],
     );
 

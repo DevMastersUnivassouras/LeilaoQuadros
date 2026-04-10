@@ -4,6 +4,26 @@ function normalizarCpf(valor) {
   return String(valor || '').replace(/\D/g, '');
 }
 
+function normalizarDataNascimento(valor) {
+  const valorFinal = String(valor || '').trim();
+
+  if (!valorFinal) {
+    return valorFinal;
+  }
+
+  const regex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!regex.test(valorFinal)) {
+    return valorFinal;
+  }
+
+  const data = new Date(`${valorFinal}T00:00:00Z`);
+  if (Number.isNaN(data.getTime())) {
+    return valorFinal;
+  }
+
+  return valorFinal;
+}
+
 const registerSchema = z.object({
   cpf: z
     .string()
@@ -13,6 +33,10 @@ const registerSchema = z.object({
   phone: z.string().trim().min(8, 'Telefone inválido'),
   firstName: z.string().trim().min(2, 'Nome deve ter pelo menos 2 caracteres'),
   lastName: z.string().trim().min(2, 'Sobrenome deve ter pelo menos 2 caracteres'),
+  birthDate: z
+    .string()
+    .transform((value) => normalizarDataNascimento(value))
+    .refine((value) => /^\d{4}-\d{2}-\d{2}$/.test(value), 'Data de nascimento inválida. Use AAAA-MM-DD'),
   password: z.string().min(6, 'Senha deve ter pelo menos 6 caracteres'),
   passwordConfirmation: z.string().min(6, 'Confirmação de senha obrigatória'),
   biometricEnabled: z.boolean().optional().default(false),
@@ -40,6 +64,10 @@ const updateProfileSchema = z.object({
   lastName: z.string().trim().min(1, 'Sobrenome é obrigatório'),
   email: z.string().email('Email inválido').transform((value) => value.trim().toLowerCase()),
   phone: z.string().trim().min(8, 'Telefone inválido'),
+  birthDate: z
+    .string()
+    .transform((value) => normalizarDataNascimento(value))
+    .refine((value) => /^\d{4}-\d{2}-\d{2}$/.test(value), 'Data de nascimento inválida. Use AAAA-MM-DD'),
 });
 
 module.exports = {
