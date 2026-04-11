@@ -75,9 +75,12 @@ Foram criados testes unitarios no backend para validar funcoes principais.
 - Local dos testes
 	server/tests/
 
-- Arquivos de teste
+- Arquivos de teste:
+  
 	authSchema.test.js
+
 	authMiddleware.test.js
+
 	servicoArmazenamento.test.js
 
 - Como rodar
